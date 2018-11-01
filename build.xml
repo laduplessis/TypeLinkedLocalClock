@@ -112,6 +112,23 @@
 
     <target name="build-beast" depends="build-local-beast,build-remote-beast"/>
 
+
+    <!-- Get dependencies -->
+    <target name="get-dependencies">
+      <echo>Downloading dependencies...</echo>
+
+      <echo>MultiTypeTree:</echo>
+      <get src="https://github.com/tgvaughan/MultiTypeTree/releases/download/v7.0.0/MultiTypeTree.v7.0.0.zip"
+           dest="${build-lib}/MultiTypeTree.zip"/>
+      <mkdir dir="${build-lib}/MultiTypeTree"/>
+      <unzip src="${build-lib}/MultiTypeTree.zip" dest="${build-lib}/MultiTypeTree"/>
+      <move todir="${build-lib}">
+        <fileset dir="${build-lib}/MultiTypeTree/lib" includes="*.jar"/>
+      </move>
+
+    </target>
+
+
     <!-- Compile -->
     <target name="compile" depends="build-beast">
         <javac target="${targetVersion}" source="${sourceVersion}" srcdir="${src}" destdir="${build}" includeantruntime="false">
