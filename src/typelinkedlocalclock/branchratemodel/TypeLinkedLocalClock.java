@@ -4,8 +4,11 @@ import beast.core.Input;
 import beast.core.parameter.RealParameter;
 import beast.core.util.Log;
 import beast.evolution.branchratemodel.BranchRateModel;
+import beast.evolution.tree.MultiTypeNode;
 import beast.evolution.tree.MultiTypeTree;
 import beast.evolution.tree.Node;
+
+import java.util.Arrays;
 
 /**
  * @author Louis du Plessis
@@ -23,7 +26,9 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
 
     protected MultiTypeTree m_tree;
-    protected RealParameter meanRate;
+    protected RealParameter rates,
+                            meanRate;
+
     protected double [] meanBranchRates;
     protected boolean recompute = false;
 
@@ -33,9 +38,8 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         // Read tree
         m_tree = treeInput.get();
 
-
         // Check limits and dimension of rates associated with types
-        RealParameter rates = rateParamInput.get();
+        rates = rateParamInput.get();
         if (rates.lowerValueInput.get() == null || rates.lowerValueInput.get() < 0.0) {
             rates.setLower(0.0);
         }
@@ -54,12 +58,12 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
             meanRate = new RealParameter("1.0");
         }
 
-
         // Initialise mean rates for each branch
         meanBranchRates = new double[m_tree.getNodeCount()];
 
 
     }
+
 
     @Override
     public double getRateForBranch(Node node) {
@@ -68,7 +72,8 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         // two different likelihood threads
         synchronized (this) {
             if (recompute) {
-                recalculateMeanBranchRates();
+                recalculateMeanBranchRatesIterative(m_tree, rates, meanBranchRates);
+                //recalculateMeanBranchRatesRecursive(m_tree, rates, meanBranchRates);
                 recompute = false;
             }
         }
@@ -78,12 +83,117 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
 
     /**
-     * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
+     * Fill the array typeTimes with the amount of time that the branch leading from MultiTypeNode node spends in
+     * each type.
      *
-     * i.e. Calculate the duration spent in each type along the branch, associate rates and get average.
+     * Note that typeTimes needs to be the same length as the number of types or else an ArrayIndexOutOfBoundsException
+     * will be thrown. (Throwing an exception is less well-behaved, but is faster than checking the number of types and
+     * there is no easy way to check the number of types from MultiTypeNode.
+     * (method getChangeTypes() does not exist and changeTypes ArrayList is private).
+     *
+     * Array is passed by pointer instead of initialized and returned at each method call to save on
+     * garbage collection.
+     *
+     * @param node
+     * @param typeTimes
      */
-    private void recalculateMeanBranchRates() {
+    public void calculateTimesInTypes(MultiTypeNode node, double [] typeTimes, boolean normalize) throws ArrayIndexOutOfBoundsException {
 
+        double  increment,
+                totalHeight = 0,
+                currHeight,
+                prevHeight = node.getHeight();
+        int currType = node.getNodeType();
+
+        // Clear array
+        for (int i = 0; i < typeTimes.length; i++)
+            typeTimes[i] = 0;
+
+        // Add time spent in each type
+        for (int i = 0; i < node.getChangeCount(); i++) {
+            currHeight = node.getChangeTime(i);
+            increment  = (currHeight - prevHeight);
+
+            totalHeight += increment;
+            typeTimes[currType] += increment;
+
+            currType   = node.getChangeType(i);
+            prevHeight = currHeight;
+        }
+        typeTimes[node.getFinalType()] += (node.getLength() - totalHeight);
+
+        // Normalize to proportion of branch length spent in each type
+        if (normalize) {
+            double branchLength = node.getLength();
+
+            for (int i = 0; i < typeTimes.length; i++) {
+                typeTimes[i] = typeTimes[i]/branchLength;
+            }
+        }
+
+    }
+
+    /**
+     * Recursive implementation
+     *
+     * @param tree
+     * @param rates
+     */
+    private void recalculateMeanBranchRatesRecursive(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
+
+        MultiTypeNode root = (MultiTypeNode) tree.getRoot();
+        double [] typeTimes = new double[rates.getDimension()];
+
+        calculateMeanBranchRate(root, rates, typeTimes, meanBranchRates);
+    }
+
+
+    private void calculateMeanBranchRate(MultiTypeNode node, RealParameter rates,
+                                         double [] typeTimes, double [] meanBranchRates) {
+
+        calculateTimesInTypes(node, typeTimes, true);
+
+        int nodeNr = node.getNr();
+        meanBranchRates[nodeNr] = 0;
+        for (int j = 0; j < typeTimes.length; j++) {
+            meanBranchRates[nodeNr] += typeTimes[nodeNr]*rates.getValue(nodeNr);
+        }
+
+        // Leaves don't have children, so no need to check if node is a leaf
+        for (int j = 0; j < node.getChildCount(); j++) {
+            calculateMeanBranchRate( (MultiTypeNode) node.getChild(j), rates, typeTimes, meanBranchRates);
+        }
+
+        /*
+        if (!node.isLeaf()) {
+            calculateMeanBranchRate( (MultiTypeNode) node.getLeft(), rates, typeTimes, meanBranchRates);
+            calculateMeanBranchRate( (MultiTypeNode) node.getRight(), rates, typeTimes, meanBranchRates);
+        }
+        */
+
+    }
+
+
+
+    /**
+         * Iterative implementation
+         *
+         * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
+         *
+         * i.e. Calculate the duration spent in each type along the branch, associate rates and get average.
+         */
+    private void recalculateMeanBranchRatesIterative(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
+
+        double [] typeTimes = new double[rates.getDimension()];
+
+        for (int i = 0; i < tree.getNodeCount(); i++) {
+            calculateTimesInTypes( (MultiTypeNode) tree.getNode(i), typeTimes, true);
+
+            meanBranchRates[i] = 0;
+            for (int j = 0; j < typeTimes.length; j++) {
+                meanBranchRates[i] += typeTimes[i]*rates.getValue(i);
+            }
+        }
     }
 
 

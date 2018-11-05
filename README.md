@@ -1,9 +1,17 @@
 # TypeLinkedLocalClock
 
 
-Beast 2 package which provides a mechanism for linking the rates of a local clock to the types in a [MultiTypeTree](http://tgvaughan.github.io/MultiTypeTree) [1] tree structure.
+Beast2 package which provides a mechanism for linking the rates of a local clock to the types in a [MultiTypeTree](http://tgvaughan.github.io/MultiTypeTree) [1] tree structure.
 
 
+## Installation
+
+This is for using the package in Beast2
+
+To run the package from the source code you will need to clone this repository, [MultiTypeTree](http://tgvaughan.github.io/MultiTypeTree) and [Beast2](). See the Beast2 website for further details.
+
+
+## Examples
 
 
 ## License
