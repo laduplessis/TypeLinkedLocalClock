@@ -30,7 +30,7 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
                             meanRate;
 
     protected double [] meanBranchRates;
-    protected boolean recompute = false;
+    protected boolean recompute = true;
 
     @Override
     public void initAndValidate() {
@@ -51,7 +51,6 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
             rates.setDimension(m_tree.getTypeSet().getNTypes());
         }
 
-
         // Do we want to allow a meanRate (across types and branches) to be set and fixed?
         meanRate = meanRateInput.get();
         if (meanRate == null) {
@@ -60,7 +59,7 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
         // Initialise mean rates for each branch
         meanBranchRates = new double[m_tree.getNodeCount()];
-
+        System.out.println(meanBranchRates.length);
 
     }
 
@@ -78,7 +77,7 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
             }
         }
 
-        return meanBranchRates[getNodeNumber(node)];
+        return meanBranchRates[node.getNr()];
     }
 
 
@@ -126,9 +125,26 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         if (normalize) {
             double branchLength = node.getLength();
 
-            for (int i = 0; i < typeTimes.length; i++) {
-                typeTimes[i] = typeTimes[i]/branchLength;
+            if (branchLength == 0.0) {
+                // Zero-length branches require special treatment or else NaNs will result
+
+                // If any type spends more than 0.0 time in a zero-length branch throw an exception
+                for (int i = 0; i < typeTimes.length; i++) {
+                    if (typeTimes[i] > 0.0) {
+                        throw new RuntimeException("ERROR: Zero-length branch cannot spend more than 0.0 time units in any type trait.");
+                    }
+                }
+
+                // Assign type of the node to the complete branch (of length 0.0)
+                typeTimes[node.getNodeType()] = 1;
+
+            } else {
+                // Calculate a weighted average if branchlength > 0
+                for (int i = 0; i < typeTimes.length; i++) {
+                    typeTimes[i] = typeTimes[i]/branchLength;
+                }
             }
+
         }
 
     }
@@ -176,12 +192,12 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
 
     /**
-         * Iterative implementation
-         *
-         * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
-         *
-         * i.e. Calculate the duration spent in each type along the branch, associate rates and get average.
-         */
+     * Iterative implementation
+     * d
+     * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
+     *
+     * i.e. Calculate the duration spent in each type along the branch, associate rates and get average.
+     */
     private void recalculateMeanBranchRatesIterative(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
 
         double [] typeTimes = new double[rates.getDimension()];
@@ -191,14 +207,22 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
             meanBranchRates[i] = 0;
             for (int j = 0; j < typeTimes.length; j++) {
-                meanBranchRates[i] += typeTimes[i]*rates.getValue(i);
+                meanBranchRates[i] += typeTimes[j]*rates.getValue(j);
             }
         }
     }
 
-
+    /**
+     * Inherited from RandomLocalClockModel.java:
+     *
+     * This method is not useful - why would node ever have a number greater than the root?
+     * (not used any longer)
+     *
+     * @param node
+     * @return
+     */
     private int getNodeNumber(Node node) {
-        int nodeNr = node.getNr();  // Why would node ever have a number greater than the root?
+        int nodeNr = node.getNr();
         if (nodeNr > m_tree.getRoot().getNr()) {
             nodeNr--;
         }
