@@ -26,9 +26,7 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
 
     protected MultiTypeTree m_tree;
-    protected RealParameter rates,
-                            meanRate;
-
+    protected RealParameter rates;
     protected double [] meanBranchRates;
     protected boolean recompute = true;
 
@@ -51,21 +49,25 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
             rates.setDimension(m_tree.getTypeSet().getNTypes());
         }
 
-        // Do we want to allow a meanRate (across types and branches) to be set and fixed?
-        meanRate = meanRateInput.get();
-        if (meanRate == null) {
-            meanRate = new RealParameter("1.0");
+        // For now do not allow a mean rate to be set
+        // This could either be set in the prior or fixed by an operator?
+        if (meanRateInput.get() != null) {
+            throw new IllegalArgumentException("Only rates and not mean rate (clock.rate) should be specified!");
         }
 
         // Initialise mean rates for each branch
         meanBranchRates = new double[m_tree.getNodeCount()];
-        System.out.println(meanBranchRates.length);
 
     }
 
 
     @Override
     public double getRateForBranch(Node node) {
+
+        if (node.isRoot()) {
+            // root has no rate
+            return 1;
+        }
 
         // this must be synchronized to avoid being called simultaneously by
         // two different likelihood threads
@@ -83,10 +85,10 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
     /**
      * Fill the array typeTimes with the amount of time that the branch leading from MultiTypeNode node spends in
-     * each type.
+     * each type. If normalize is true the array is filled with the proportion of the branch time spent in each type.
      *
      * Note that typeTimes needs to be the same length as the number of types or else an ArrayIndexOutOfBoundsException
-     * will be thrown. (Throwing an exception is less well-behaved, but is faster than checking the number of types and
+     * will be thrown. Throwing an exception is less well-behaved, but is faster than checking the number of types and
      * there is no easy way to check the number of types from MultiTypeNode.
      * (method getChangeTypes() does not exist and changeTypes ArrayList is private).
      *
@@ -95,8 +97,9 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
      *
      * @param node
      * @param typeTimes
+     * @throws ArrayIndexOutOfBoundsException
      */
-    public void calculateTimesInTypes(MultiTypeNode node, double [] typeTimes, boolean normalize) throws ArrayIndexOutOfBoundsException {
+    public void calculateTimesInTypes(MultiTypeNode node, double [] typeTimes) throws ArrayIndexOutOfBoundsException {
 
         double  increment,
                 totalHeight = 0,
@@ -121,39 +124,52 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         }
         typeTimes[node.getFinalType()] += (node.getLength() - totalHeight);
 
-        // Normalize to proportion of branch length spent in each type
-        if (normalize) {
-            double branchLength = node.getLength();
-
-            if (branchLength == 0.0) {
-                // Zero-length branches require special treatment or else NaNs will result
-
-                // If any type spends more than 0.0 time in a zero-length branch throw an exception
-                for (int i = 0; i < typeTimes.length; i++) {
-                    if (typeTimes[i] > 0.0) {
-                        throw new RuntimeException("ERROR: Zero-length branch cannot spend more than 0.0 time units in any type trait.");
-                    }
-                }
-
-                // Assign type of the node to the complete branch (of length 0.0)
-                typeTimes[node.getNodeType()] = 1;
-
-            } else {
-                // Calculate a weighted average if branchlength > 0
-                for (int i = 0; i < typeTimes.length; i++) {
-                    typeTimes[i] = typeTimes[i]/branchLength;
-                }
-            }
-
-        }
-
     }
 
+
     /**
-     * Recursive implementation
+     * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
+     *
+     * i.e. Calculate the duration spent in each type along the branch, associate rates and get weighted average.
+     *
+     * Iterative implementation (Should be a little faster than recursive implementation)
      *
      * @param tree
      * @param rates
+     * @param meanBranchRates
+     */
+    private void recalculateMeanBranchRatesIterative(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
+
+        MultiTypeNode node;
+        double [] typeTimes = new double[rates.getDimension()];
+        double branchLength;
+
+        for (int i = 0; i < tree.getNodeCount(); i++) {
+            node = (MultiTypeNode) tree.getNode(i);
+            calculateTimesInTypes(node, typeTimes);
+
+            branchLength = node.getLength();
+            if (branchLength == 0.0) {
+                // On zero-length branch simply return the rate associated with the node type
+                meanBranchRates[i] = rates.getValue(node.getNodeType());
+            } else {
+                // Calculate weighted average across branchlength
+                meanBranchRates[i] = 0;
+                for (int j = 0; j < typeTimes.length; j++) {
+                    meanBranchRates[i] += typeTimes[j] * rates.getValue(j);
+                }
+                meanBranchRates[i] = meanBranchRates[i] / branchLength;
+            }
+        }
+    }
+
+
+    /**
+     * Recursive implementation of recalculateMeanBranchRates (probably marginally slower)
+     *
+     * @param tree
+     * @param rates
+     * @param meanBranchRates
      */
     private void recalculateMeanBranchRatesRecursive(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
 
@@ -163,53 +179,45 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         calculateMeanBranchRate(root, rates, typeTimes, meanBranchRates);
     }
 
-
+    /**
+     * Recursive implementation of recalculateMeanBranchRates (probably marginally slower)
+     *
+     * @param node
+     * @param rates
+     * @param typeTimes
+     * @param meanBranchRates
+     */
     private void calculateMeanBranchRate(MultiTypeNode node, RealParameter rates,
                                          double [] typeTimes, double [] meanBranchRates) {
 
-        calculateTimesInTypes(node, typeTimes, true);
-
         int nodeNr = node.getNr();
-        meanBranchRates[nodeNr] = 0;
-        for (int j = 0; j < typeTimes.length; j++) {
-            meanBranchRates[nodeNr] += typeTimes[nodeNr]*rates.getValue(nodeNr);
+
+        calculateTimesInTypes(node, typeTimes);
+
+        double branchLength = node.getLength();
+        if (branchLength == 0.0) {
+            // On zero-length branch simply return the rate associated with the node type
+            meanBranchRates[nodeNr] = rates.getValue(node.getNodeType());
+        } else {
+            // Calculate weighted average across branchlength
+            meanBranchRates[nodeNr] = 0;
+            for (int j = 0; j < typeTimes.length; j++) {
+                meanBranchRates[nodeNr] += typeTimes[j] * rates.getValue(j);
+            }
+            meanBranchRates[nodeNr] = meanBranchRates[nodeNr] / branchLength;
         }
+
 
         // Leaves don't have children, so no need to check if node is a leaf
         for (int j = 0; j < node.getChildCount(); j++) {
             calculateMeanBranchRate( (MultiTypeNode) node.getChild(j), rates, typeTimes, meanBranchRates);
         }
 
-        /*
-        if (!node.isLeaf()) {
-            calculateMeanBranchRate( (MultiTypeNode) node.getLeft(), rates, typeTimes, meanBranchRates);
-            calculateMeanBranchRate( (MultiTypeNode) node.getRight(), rates, typeTimes, meanBranchRates);
-        }
-        */
+        //if (!node.isLeaf()) {
+        //    calculateMeanBranchRate( (MultiTypeNode) node.getLeft(), rates, typeTimes, meanBranchRates);
+        //    calculateMeanBranchRate( (MultiTypeNode) node.getRight(), rates, typeTimes, meanBranchRates);
+        //}
 
-    }
-
-
-
-    /**
-     * Iterative implementation
-     * d
-     * For each branch in the tree calculate the mean rate across a branch in a MultiTypeTree
-     *
-     * i.e. Calculate the duration spent in each type along the branch, associate rates and get average.
-     */
-    private void recalculateMeanBranchRatesIterative(MultiTypeTree tree, RealParameter rates, double [] meanBranchRates) {
-
-        double [] typeTimes = new double[rates.getDimension()];
-
-        for (int i = 0; i < tree.getNodeCount(); i++) {
-            calculateTimesInTypes( (MultiTypeNode) tree.getNode(i), typeTimes, true);
-
-            meanBranchRates[i] = 0;
-            for (int j = 0; j < typeTimes.length; j++) {
-                meanBranchRates[i] += typeTimes[j]*rates.getValue(j);
-            }
-        }
     }
 
     /**
@@ -218,16 +226,17 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
      * This method is not useful - why would node ever have a number greater than the root?
      * (not used any longer)
      *
-     * @param node
+     * @param
      * @return
      */
-    private int getNodeNumber(Node node) {
+    /*private int getNodeNumber(Node node) {
         int nodeNr = node.getNr();
         if (nodeNr > m_tree.getRoot().getNr()) {
             nodeNr--;
         }
         return nodeNr;
-    }
+    }*/
+
 
     /* Calculation node methods */
 
