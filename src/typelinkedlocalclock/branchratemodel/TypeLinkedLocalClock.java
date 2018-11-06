@@ -8,8 +8,6 @@ import beast.evolution.tree.MultiTypeNode;
 import beast.evolution.tree.MultiTypeTree;
 import beast.evolution.tree.Node;
 
-import java.util.Arrays;
-
 /**
  * @author Louis du Plessis
  * @date   2018/11/01
@@ -57,7 +55,6 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
         // Initialise mean rates for each branch
         meanBranchRates = new double[m_tree.getNodeCount()];
-
     }
 
 
