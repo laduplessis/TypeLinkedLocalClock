@@ -24,9 +24,10 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
 
     protected MultiTypeTree m_tree;
-    protected RealParameter rates;
+    protected RealParameter rates, meanRate;
     protected double [] meanBranchRates;
     protected boolean recompute = true;
+    protected double scaleFactor = 1.0;
 
     @Override
     public void initAndValidate() {
@@ -49,8 +50,12 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
 
         // For now do not allow a mean rate to be set
         // This could either be set in the prior or fixed by an operator?
-        if (meanRateInput.get() != null) {
-            throw new IllegalArgumentException("Only rates and not mean rate (clock.rate) should be specified!");
+        //if (meanRateInput.get() != null) {
+        //    throw new IllegalArgumentException("Only rates and not mean rate (clock.rate) should be specified!");
+        //}
+        meanRate = meanRateInput.get();
+        if (meanRate == null) {
+            meanRate = new RealParameter("1.0");
         }
 
         // Initialise mean rates for each branch
@@ -72,11 +77,32 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
             if (recompute) {
                 recalculateMeanBranchRatesIterative(m_tree, rates, meanBranchRates);
                 //recalculateMeanBranchRatesRecursive(m_tree, rates, meanBranchRates);
+
+                double timeTotal   = 0.0,
+                       branchTotal = 0.0;
+
+                // Normalise if mean rate is defined
+                if (meanRate != null) {
+                    for (int i = 0; i < m_tree.getNodeCount(); i++) {
+                        Node nnode = m_tree.getNode(i);
+                        if (!nnode.isRoot()) {
+
+                            double branchInTime = nnode.getLength();
+                            double branchLength = branchInTime * meanBranchRates[nnode.getNr()];
+
+                            timeTotal += branchInTime;
+                            branchTotal += branchLength;
+                        }
+                    }
+                    //System.out.println(branchTotal/timeTotal);
+                    scaleFactor = meanRate.getValue() * (timeTotal / branchTotal);
+                }
+
                 recompute = false;
             }
         }
 
-        return meanBranchRates[node.getNr()];
+        return scaleFactor*meanBranchRates[node.getNr()];
     }
 
 
