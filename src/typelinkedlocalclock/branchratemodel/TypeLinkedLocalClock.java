@@ -54,9 +54,9 @@ public class TypeLinkedLocalClock extends BranchRateModel.Base {
         //    throw new IllegalArgumentException("Only rates and not mean rate (clock.rate) should be specified!");
         //}
         meanRate = meanRateInput.get();
-        if (meanRate == null) {
-            meanRate = new RealParameter("1.0");
-        }
+        //if (meanRate == null) {
+        //    meanRate = new RealParameter("1.0");
+        //}
 
         // Initialise mean rates for each branch
         meanBranchRates = new double[m_tree.getNodeCount()];

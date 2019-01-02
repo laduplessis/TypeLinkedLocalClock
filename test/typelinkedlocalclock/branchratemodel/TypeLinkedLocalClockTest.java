@@ -16,7 +16,6 @@ public class TypeLinkedLocalClockTest extends TestCase {
      *
      */
 
-
     @Test
     public void testTwoTypeTreeTimesinTypes() {
 
@@ -51,7 +50,7 @@ public class TypeLinkedLocalClockTest extends TestCase {
         for (int i = 0; i < mtt.getNodeCount(); i++) {
             clock.calculateTimesInTypes( (MultiTypeNode) mtt.getNode(i), typeTimes);
 
-            //System.out.println(i+":\t"+Arrays.toString(typeTimes));
+            // System.out.println(i+":\t"+Arrays.toString(typeTimes));
             for (int j = 0; j < typeTimes.length; j++) {
                 assertEquals(expectedTimes[i][j], typeTimes[j], BEASTTestCase.PRECISION);
             }
@@ -122,6 +121,30 @@ public class TypeLinkedLocalClockTest extends TestCase {
     }
 
 
+    public void testTwoTypeTreeGetRateForBranchMeanRateFixed() {
+
+        System.out.println("Test getRateForBranch() on a 2-type MTT");
+
+        // Assemble test MultiTypeTree:
+        String newickStr = "(((3[&location=1]:0.5)[&location=0,reaction=Migration]:2.0)[&location=1,reaction=Migration]:0.8,(((((6[&location=0]:0.25,4[&location=0]:0.2)[&location=0,reaction=Coalescence]:0.25,(5[&location=0]:0.2,((1[&location=1]:0.05,2[&location=1]:0.05)[&location=1,reaction=Coalescence]:0.25)[&location=0,reaction=Migration]:0.1)[&location=0,reaction=Coalescence]:0.1)[&location=0,reaction=Coalescence]:0.1)[&location=1,reaction=Migration]:0.5)[&location=0,reaction=Migration]:0.15)[&location=1,reaction=Migration]:1.5)[&location=1,reaction=Coalescence]:0.0;";
+
+        MultiTypeTreeFromNewick mtt = new MultiTypeTreeFromNewick();
+        mtt.initByName(
+                "value", newickStr,
+                "typeLabel", "location");
+
+        TypeLinkedLocalClock clock = new TypeLinkedLocalClock();
+        clock.initByName("tree", mtt, "rates", "0.5 2", "clock.rate","1");
+
+        // Calculated by hand
+        double [] expectedRates = new double [] {2.0, 2.0, 1.39393939393939, 1.0, 1.0, 1.0, 1.0, 1.714285714285714, 1.0, 1.888888888888888, 1.0};
+        double [] typeTimes = new double[2];
+
+        for (int i = 0; i < mtt.getNodeCount(); i++) {
+            System.out.println(i+":\t"+clock.getRateForBranch(mtt.getNode(i)));
+            //assertEquals(expectedRates[i], clock.getRateForBranch(mtt.getNode(i)), BEASTTestCase.PRECISION);
+        }
+    }
 
 
 
